@@ -13,7 +13,7 @@ const configuration = {
 };
 
 // Connect to WebSocket signaling server
-ws = new WebSocket("ws://localhost:3000");
+ws = new WebSocket("ws://localhost:63227");
 
 ws.onmessage = async (event) => {
     const data = JSON.parse(event.data);
