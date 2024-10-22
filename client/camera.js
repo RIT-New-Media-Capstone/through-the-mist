@@ -4,6 +4,7 @@ const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 
 let localStream;
+let remoteStream;
 let peerConnection;
 let ws;
 
@@ -18,21 +19,71 @@ ws = new WebSocket("ws://localhost:63227");
 ws.onmessage = async (event) => {
     const data = JSON.parse(event.data);
 
-    if (data.type === "offer") {
-        await peerConnection.setRemoteDescription(data.offer);
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-        ws.send(JSON.stringify({ type: "answer", answer }));
-    } else if (data.type === "answer") {
-        await peerConnection.setRemoteDescription(data.answer);
-    } else if (data.type === "candidate") {
-        try {
-            await peerConnection.addIceCandidate(data.candidate);
-        } catch (e) {
-            console.error("Error adding received ICE candidate", e);
-        }
+    switch (data.type) {
+        case 'offer':
+            await handleOffer(data.offer);
+            break;
+        case 'answer':
+            await handleAnswer(data.answer);
+            break;
+        case 'ice-candidate':
+            await handleNewICECandidateMsg(data.candidate);
+            break;
     }
 };
+
+// Create the peer connection
+async function createPeerConnection() {
+    peerConnection = new RTCPeerConnection(configuration);
+
+    // When ICE candidates are found, send them to the other peer
+    peerConnection.onicecandidate = event => {
+        if (event.candidate) {
+            signalingServer.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+        }
+    };
+
+    // When a remote stream is added, display it
+    peerConnection.ontrack = event => {
+        remoteVideo.srcObject = event.streams[0];
+        remoteStream = event.streams[0];
+    };
+
+    // Add local stream tracks to the peer connection
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+}
+
+// Handling signaling messages
+async function handleOffer(offer) {
+    await createPeerConnection();
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
+
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+
+    signalingServer.send(JSON.stringify({ type: 'answer', answer }));
+}
+
+async function handleAnswer(answer) {
+    await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+}
+
+async function handleNewICECandidateMsg(candidate) {
+    try {
+        await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (e) {
+        console.error('Error adding received ICE candidate', e);
+    }
+}
+
+// Function to create and send offer
+async function startCall() {
+    await createPeerConnection();
+    const offer = await peerConnection.createOffer();
+    await peerConnection.setLocalDescription(offer);
+
+    ws.send(JSON.stringify({ type: 'offer', offer }));
+}
 
 // Function to start the call
 startCallButton.onclick = async () => {
