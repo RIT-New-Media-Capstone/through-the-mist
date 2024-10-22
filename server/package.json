@@ -1,0 +1,15 @@
+{
+  "name": "through-the-mist",
+  "version": "1.0.0",
+  "description": "Project 2 of IGME 587",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node src/index.js"
+  },
+  "author": "Colby Heaton, Amrit Wanasundera, Diya Iyer",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.21.1"
+  }
+}
