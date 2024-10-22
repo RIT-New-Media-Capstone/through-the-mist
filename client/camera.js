@@ -4,7 +4,6 @@ const localVideo = document.getElementById("localVideo");
 const remoteVideo = document.getElementById("remoteVideo");
 
 let localStream;
-let remoteStream;
 let peerConnection;
 let ws;
 
@@ -14,10 +13,19 @@ const configuration = {
 };
 
 // Connect to WebSocket signaling server
-ws = new WebSocket("ws://localhost:63227");
+ws = new WebSocket("ws://localhost:3000");
 
 ws.onmessage = async (event) => {
-    const data = JSON.parse(event.data);
+    let data;
+    
+    if (event.data instanceof Blob) {
+        // Convert Blob to text and then parse as JSON
+        const textData = await event.data.text();
+        data = JSON.parse(textData);
+    } else {
+        // Directly parse if it's a string
+        data = JSON.parse(event.data);
+    }
 
     switch (data.type) {
         case 'offer':
@@ -39,14 +47,13 @@ async function createPeerConnection() {
     // When ICE candidates are found, send them to the other peer
     peerConnection.onicecandidate = event => {
         if (event.candidate) {
-            signalingServer.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+            ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
         }
     };
 
     // When a remote stream is added, display it
     peerConnection.ontrack = event => {
         remoteVideo.srcObject = event.streams[0];
-        remoteStream = event.streams[0];
     };
 
     // Add local stream tracks to the peer connection
@@ -61,7 +68,7 @@ async function handleOffer(offer) {
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
 
-    signalingServer.send(JSON.stringify({ type: 'answer', answer }));
+    ws.send(JSON.stringify({ type: 'answer', answer }));
 }
 
 async function handleAnswer(answer) {
@@ -77,32 +84,20 @@ async function handleNewICECandidateMsg(candidate) {
 }
 
 // Function to create and send offer
-async function startCall() {
-    await createPeerConnection();
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
+// async function startCall() {
+//     await createPeerConnection();
+//     const offer = await peerConnection.createOffer();
+//     await peerConnection.setLocalDescription(offer);
 
-    ws.send(JSON.stringify({ type: 'offer', offer }));
-}
+//     ws.send(JSON.stringify({ type: 'offer', offer }));
+// }
 
 // Function to start the call
 startCallButton.onclick = async () => {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
 
-    peerConnection = new RTCPeerConnection(configuration);
-
-    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
-
-    peerConnection.onicecandidate = event => {
-        if (event.candidate) {
-            ws.send(JSON.stringify({ type: "candidate", candidate: event.candidate }));
-        }
-    };
-
-    peerConnection.ontrack = event => {
-        remoteVideo.srcObject = event.streams[0];
-    };
+    await createPeerConnection();
 
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);

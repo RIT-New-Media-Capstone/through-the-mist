@@ -14,7 +14,7 @@ app.use(express.static(clientPath));
 
 // Serve the HTML file for the root endpoint
 app.get('/', (req, res) => {
-    res.sendFile(path.join(clientPath, 'index.html'));
+  res.sendFile(path.join(clientPath, 'index.html'));
 });
 
 // Additional routes here
@@ -26,25 +26,29 @@ let connectedClients = [];
 
 // Handle WebSocket connections
 wss.on('connection', (ws) => {
-  connectedClients.push(ws);
-  
-  // Relay messages between clients
-  ws.on('message', (message) => {
-    connectedClients.forEach(client => {
-      if (client !== ws && client.readyState === WebSocket.OPEN) {
-        client.send(message); // Relay offer/answer/ICE candidates to the other peer
-      }
-    });
-  });
+  if (connectedClients.length < 2) {
+    connectedClients.push(ws);
 
-  // Remove the client when they disconnect
-  ws.on('close', () => {
-    connectedClients = connectedClients.filter(client => client !== ws);
-  });
+    // Relay messages between clients
+    ws.on('message', (message) => {
+      connectedClients.forEach(client => {
+        if (client !== ws && client.readyState === WebSocket.OPEN) {
+          client.send(message); // Relay offer/answer/ICE candidates to the other peer
+        }
+      });
+    });
+
+    // Remove the client when they disconnect
+    ws.on('close', () => {
+      connectedClients = connectedClients.filter(client => client !== ws);
+    });
+  } else {
+    ws.close();//closes the connection
+  }
 });
 
 // Start the server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+server.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
 });
