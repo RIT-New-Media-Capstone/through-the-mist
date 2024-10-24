@@ -13,7 +13,19 @@ const configuration = {
 };
 
 // Connect to WebSocket signaling server
-ws = new WebSocket("ws://localhost:3000");
+
+// *****************************************************************
+
+// IMPORTANT: USE THE CORRECT WEBSOCKET FOR WHATEVER TESTING METHOD YOU USE
+
+// Use THIS line for local testing
+//ws = new WebSocket("ws://localhost:3000");
+
+// Use THIS line for ngrok testing across multiple devices
+// replace the part after "wss://"" with whatever ngrok generates
+ws = new WebSocket("wss://b947-2620-8d-8000-1074-4cd6-9722-d2f1-a467.ngrok-free.app");
+
+// *****************************************************************
 
 ws.onmessage = async (event) => {
     let data;
