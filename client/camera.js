@@ -1,41 +1,24 @@
 const startCallButton = document.getElementById("startCall");
 const endCallButton = document.getElementById("endCall");
 const localVideo = document.getElementById("localVideo");
-const remoteVideo = document.getElementById("remoteVideo");
+const localCanvas = document.getElementById("localCanvas");
 
-let localStream;
-let peerConnection;
-let ws;
+let localStream, peerConnection, ws, localAnimationFrameId;
 
-// Define configuration for STUN server
 const configuration = {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
 
 // Connect to WebSocket signaling server
-
-// *****************************************************************
-
-// IMPORTANT: USE THE CORRECT WEBSOCKET FOR WHATEVER TESTING METHOD YOU USE
-
-// Use THIS line for local testing
-//ws = new WebSocket("ws://localhost:3000");
-
-// Use THIS line for ngrok testing across multiple devices
-// replace the part after "wss://"" with whatever ngrok generates
 ws = new WebSocket("wss://b947-2620-8d-8000-1074-4cd6-9722-d2f1-a467.ngrok-free.app");
-
-// *****************************************************************
 
 ws.onmessage = async (event) => {
     let data;
-    
+
     if (event.data instanceof Blob) {
-        // Convert Blob to text and then parse as JSON
         const textData = await event.data.text();
         data = JSON.parse(textData);
     } else {
-        // Directly parse if it's a string
         data = JSON.parse(event.data);
     }
 
@@ -56,23 +39,26 @@ ws.onmessage = async (event) => {
 async function createPeerConnection() {
     peerConnection = new RTCPeerConnection(configuration);
 
-    // When ICE candidates are found, send them to the other peer
     peerConnection.onicecandidate = event => {
         if (event.candidate) {
             ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
         }
     };
 
-    // When a remote stream is added, display it
     peerConnection.ontrack = event => {
-        remoteVideo.srcObject = event.streams[0];
+        const [remoteStream] = event.streams;
+        localVideo.srcObject = remoteStream;
+        
+        localVideo.onloadeddata = () => {
+            console.log("Remote video loaded, applying WebGL effect.");
+            setupWebGLShaderEffect(localVideo, localCanvas);
+        };
     };
 
-    // Add local stream tracks to the peer connection
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 }
 
-// Handling signaling messages
+// Handle signaling messages
 async function handleOffer(offer) {
     await createPeerConnection();
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -95,16 +81,7 @@ async function handleNewICECandidateMsg(candidate) {
     }
 }
 
-// Function to create and send offer
-// async function startCall() {
-//     await createPeerConnection();
-//     const offer = await peerConnection.createOffer();
-//     await peerConnection.setLocalDescription(offer);
-
-//     ws.send(JSON.stringify({ type: 'offer', offer }));
-// }
-
-// Function to start the call
+// Start the call
 startCallButton.onclick = async () => {
     localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     localVideo.srcObject = localStream;
@@ -115,11 +92,102 @@ startCallButton.onclick = async () => {
     await peerConnection.setLocalDescription(offer);
 
     ws.send(JSON.stringify({ type: "offer", offer }));
+
+    localVideo.onloadeddata = () => {
+        console.log("Local video loaded, applying WebGL effect.");
+        setupWebGLShaderEffect(localVideo, localCanvas);
+    };
 };
 
-// Function to end the call
+// End the call
 endCallButton.onclick = () => {
     peerConnection.close();
     localVideo.srcObject.getTracks().forEach(track => track.stop());
-    remoteVideo.srcObject = null;
+    cancelAnimationFrame(localAnimationFrameId);
 };
+
+
+// Set up WebGL shader with Three.js for a video stream
+function setupWebGLShaderEffect(videoElement, canvasElement, streamType) {
+    const videoTexture = new THREE.VideoTexture(videoElement);
+
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+    videoTexture.format = THREE.RGBFormat;
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    const geometry = new THREE.PlaneGeometry(2, 2);
+    const material = new THREE.ShaderMaterial({
+        uniforms: {
+            uTexture: { value: videoTexture },
+            uFade: { value: 1.0 }, // Fade control
+        },
+        vertexShader: `
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                gl_Position = vec4(position, 1.0);
+            }
+        `,
+        fragmentShader: `
+            uniform sampler2D uTexture;
+            uniform float uFade;
+            varying vec2 vUv;
+
+            void main() {
+                vec4 color = texture2D(uTexture, vUv);
+                float gray = (color.r + color.g + color.b) / 3.0;
+                float threshold = 0.5;
+                vec3 chalkColor = gray < threshold ? vec3(0.0) : vec3(1.0);
+
+                float dx = 1.0 / 800.0;
+                float dy = 1.0 / 600.0;
+
+                float edgeDetection = 0.0;
+                edgeDetection += texture2D(uTexture, vec2(vUv.x - dx, vUv.y)).r;
+                edgeDetection += texture2D(uTexture, vec2(vUv.x + dx, vUv.y)).r;
+                edgeDetection += texture2D(uTexture, vec2(vUv.x, vUv.y - dy)).r;
+                edgeDetection += texture2D(uTexture, vec2(vUv.x, vUv.y + dy)).r;
+                edgeDetection -= 4.0 * gray;
+
+                vec3 outline = edgeDetection > 0.1 ? vec3(1.0) : vec3(0.0);
+                vec3 finalColor = mix(chalkColor, outline, step(0.0, edgeDetection));
+
+                gl_FragColor = vec4(mix(finalColor, color.rgb, uFade), 1.0);
+            }
+        `
+    });
+
+    const mesh = new THREE.Mesh(geometry, material);
+    scene.add(mesh);
+
+    const renderer = new THREE.WebGLRenderer({ canvas: canvasElement });
+    renderer.setSize(canvasElement.clientWidth, canvasElement.clientHeight);
+
+    let fadeStartTime = Date.now();
+    const fadeDuration = 10000; // 10 seconds for each fade stage
+    const totalFadeStages = 5;
+    const fadeStep = 1 / totalFadeStages;
+
+    function animate() {
+        const elapsed = Date.now() - fadeStartTime;
+        const currentStage = Math.floor(elapsed / fadeDuration);
+        if (currentStage < totalFadeStages) {
+            material.uniforms.uFade.value = currentStage * fadeStep;
+        } else {
+            material.uniforms.uFade.value = 1.0;
+        }
+
+        renderer.render(scene, camera);
+        if (streamType === "local") {
+            localAnimationFrameId = requestAnimationFrame(animate);
+        } else {
+            remoteAnimationFrameId = requestAnimationFrame(animate);
+        }
+    }
+
+    animate();
+}
+
