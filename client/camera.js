@@ -2,63 +2,91 @@ const startCallButton = document.getElementById("startCall");
 const endCallButton = document.getElementById("endCall");
 const localVideo = document.getElementById("localVideo");
 const localCanvas = document.getElementById("localCanvas");
+const remoteVideo = document.getElementById("remoteVideo");
+const remoteCanvas = document.getElementById("remoteCanvas");
 
-let localStream, peerConnection, ws, localAnimationFrameId;
+let localStream, peerConnection, ws, localAnimationFrameId, remoteAnimationFrameId;
+let isWebSocketOpen = false;  // Flag to check if WebSocket is open
 
 const configuration = {
     iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
 };
 
-// Connect to WebSocket signaling server
-ws = new WebSocket("wss://b947-2620-8d-8000-1074-4cd6-9722-d2f1-a467.ngrok-free.app");
+// Connect to WebSocket: Comment one and uncomment the other depending on connection type
+ws = new WebSocket("ws://localhost:3000");
+//ws = new WebSocket("wss://b947-2620-8d-8000-1074-4cd6-9722-d2f1-a467.ngrok-free.app");
 
-ws.onmessage = async (event) => {
-    let data;
+ws.onopen = () => {
+    console.log("WebSocket connection established.");
+    isWebSocketOpen = true;  // Set the flag when WebSocket is open
 
-    if (event.data instanceof Blob) {
-        const textData = await event.data.text();
-        data = JSON.parse(textData);
-    } else {
-        data = JSON.parse(event.data);
-    }
+    // Now that WebSocket is open, set up the message handler
+    ws.onmessage = async (event) => {
+        let data;
+        //Blob is raw data that can become something readable 
+        if (event.data instanceof Blob) {
+            const textData = await event.data.text();
+            data = JSON.parse(textData);
+        } else {
+            data = JSON.parse(event.data);
+        }
 
-    switch (data.type) {
-        case 'offer':
-            await handleOffer(data.offer);
-            break;
-        case 'answer':
-            await handleAnswer(data.answer);
-            break;
-        case 'ice-candidate':
-            await handleNewICECandidateMsg(data.candidate);
-            break;
-    }
+        switch (data.type) {
+            case 'offer':
+                await handleOffer(data.offer);
+                break;
+            case 'answer':
+                await handleAnswer(data.answer);
+                break;
+            case 'ice-candidate':
+                await handleNewICECandidateMsg(data.candidate);
+                break;
+        }
+    };
+};
+//Error Checking to make sure the connection is established
+ws.onerror = (error) => {
+    console.error("WebSocket error:", error);
+};
+//Check if the connection has been closed 
+ws.onclose = () => {
+    console.warn("WebSocket connection closed.");
+    isWebSocketOpen = false;  
 };
 
-// Create the peer connection
+// Function to send messages via WebSocket
+function sendMessage(message) {
+    if (isWebSocketOpen) {
+        ws.send(JSON.stringify(message));
+    } else {
+        console.error("WebSocket is not open. Message not sent.");
+    }
+}
+
+// Create the peer connection with a WebRTC WebAPI
 async function createPeerConnection() {
     peerConnection = new RTCPeerConnection(configuration);
 
     peerConnection.onicecandidate = event => {
         if (event.candidate) {
-            ws.send(JSON.stringify({ type: 'ice-candidate', candidate: event.candidate }));
+            sendMessage({ type: 'ice-candidate', candidate: event.candidate });
         }
     };
 
     peerConnection.ontrack = event => {
         const [remoteStream] = event.streams;
-        localVideo.srcObject = remoteStream;
-        
-        localVideo.onloadeddata = () => {
+        remoteVideo.srcObject = remoteStream;  // Use remoteVideo for remote stream
+
+        remoteVideo.onloadeddata = () => {
             console.log("Remote video loaded, applying WebGL effect.");
-            setupWebGLShaderEffect(localVideo, localCanvas);
+            setupWebGLShaderEffect(remoteVideo, remoteCanvas, "remote");  // Use remoteCanvas for remote video
         };
     };
 
     localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
 }
 
-// Handle signaling messages
+// Handle signaling messages for if the connection was successful of and error occured
 async function handleOffer(offer) {
     await createPeerConnection();
     await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -66,13 +94,13 @@ async function handleOffer(offer) {
     const answer = await peerConnection.createAnswer();
     await peerConnection.setLocalDescription(answer);
 
-    ws.send(JSON.stringify({ type: 'answer', answer }));
+    sendMessage({ type: 'answer', answer });
 }
-
+// 
 async function handleAnswer(answer) {
     await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
 }
-
+//Checking the internet connection establishment to connect with RTC
 async function handleNewICECandidateMsg(candidate) {
     try {
         await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
@@ -91,21 +119,27 @@ startCallButton.onclick = async () => {
     const offer = await peerConnection.createOffer();
     await peerConnection.setLocalDescription(offer);
 
-    ws.send(JSON.stringify({ type: "offer", offer }));
-
+    sendMessage({ type: 'offer', offer });
+//Setup the canvas to take the camera
     localVideo.onloadeddata = () => {
         console.log("Local video loaded, applying WebGL effect.");
-        setupWebGLShaderEffect(localVideo, localCanvas);
+        setupWebGLShaderEffect(localVideo, localCanvas, "local");
     };
 };
 
 // End the call
 endCallButton.onclick = () => {
-    peerConnection.close();
-    localVideo.srcObject.getTracks().forEach(track => track.stop());
-    cancelAnimationFrame(localAnimationFrameId);
-};
+    if (peerConnection) {
+        peerConnection.close();
+    }
+//Stops the stream
+    if (localVideo.srcObject) {
+        localVideo.srcObject.getTracks().forEach(track => track.stop());
+    }
 
+    cancelAnimationFrame(localAnimationFrameId);
+    cancelAnimationFrame(remoteAnimationFrameId);
+};
 
 // Set up WebGL shader with Three.js for a video stream
 function setupWebGLShaderEffect(videoElement, canvasElement, streamType) {
@@ -122,7 +156,7 @@ function setupWebGLShaderEffect(videoElement, canvasElement, streamType) {
     const material = new THREE.ShaderMaterial({
         uniforms: {
             uTexture: { value: videoTexture },
-            uFade: { value: 1.0 }, // Fade control
+            uFade: { value: 1.0 },
         },
         vertexShader: `
             varying vec2 vUv;
@@ -190,4 +224,3 @@ function setupWebGLShaderEffect(videoElement, canvasElement, streamType) {
 
     animate();
 }
-

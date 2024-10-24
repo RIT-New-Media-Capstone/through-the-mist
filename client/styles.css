@@ -4,13 +4,23 @@ body {
     align-items: center;
     background-color: #f0f0f0;
     font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    height: 100vh;
 }
 
 .video-container {
-    position: relative; 
-    display: flex; 
+    display: flex;
+    justify-content: space-between;
+    width: 90%;
+    max-width: 1200px;
     margin-top: 20px;
-    width: auto; 
+}
+
+.video-wrapper {
+    position: relative;
+    width: 48%; 
+    aspect-ratio: 16/9;  
 }
 
 video {
@@ -19,7 +29,7 @@ video {
     height: auto;
     border: 2px solid #333;
     border-radius: 8px;
-    z-index: 1; 
+    z-index: 1;
 }
 
 canvas {
@@ -28,11 +38,9 @@ canvas {
     left: 0;
     width: 100%;
     height: 100%;
-    border-radius: 8px; 
-    border: 2px solid #333; 
-    z-index: 2; 
-    pointer-events: none; 
-    object-fit: cover; 
+    border-radius: 8px;
+    z-index: 2;
+    pointer-events: none;
 }
 
 .controls {
@@ -43,5 +51,12 @@ button {
     padding: 10px 20px;
     margin: 5px;
     font-size: 16px;
+    cursor: pointer;
+    border: 2px solid #333;
+    background-color: #fff;
+    border-radius: 4px;
 }
 
+button:hover {
+    background-color: #e0e0e0;
+}

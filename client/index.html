@@ -3,22 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Chat Application with Shader Effect</title>
+    <title>Video Chat Project</title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
     <div class="video-container">
-        <video id="localVideo" autoplay playsinline></video>
-        <video id="remoteVideo" autoplay playsinline></video>
+        <!-- Local video and WebGL shader canvas -->
+        <div class="video-wrapper">
+            <video id="localVideo" autoplay playsinline></video>
+            <canvas id="localCanvas"></canvas>
+        </div>
         
-        <canvas id="localCanvas"></canvas>
-        <canvas id="remoteCanvas"></canvas>
+        <!-- Remote video and WebGL shader canvas -->
+        <div class="video-wrapper">
+            <video id="remoteVideo" autoplay playsinline></video>
+            <canvas id="remoteCanvas"></canvas>
+        </div>
     </div>
+    
     <div class="controls">
         <button id="startCall">Start Call</button>
         <button id="endCall">End Call</button>
     </div>
+
+    <!-- External script libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="/camera.js"></script>
 </body>
 </html>
+
